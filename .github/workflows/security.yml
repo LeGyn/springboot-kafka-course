@@ -3,6 +3,7 @@ name: Security gates
 on:
   pull_request:
   push:
+    branches: [main, master, dev]
   schedule:
     - cron: "23 7 * * 1"
   workflow_dispatch:
@@ -21,17 +22,26 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-
       - name: Scan for leaked secrets
+        if: ${{ !cancelled() }}
         uses: gitleaks/gitleaks-action@v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: false
-
-      - name: Scan source code
-        run: docker run --rm -v "$GITHUB_WORKSPACE:/src" semgrep/semgrep:1.182.0 semgrep scan --config p/security-audit --error /src
-
-      - name: Scan dependencies, secrets and misconfiguration
+          GITLEAKS_NOTIFY_USER_LIST: "@LeGyn"
+      - name: Checkmarx One scan
+        if: ${{ !cancelled() }}
+        uses: checkmarx/ast-github-action@2.3.47
+        with:
+          project_name: ${{ github.repository }}
+          branch: ${{ github.head_ref || github.ref_name }}
+          cx_tenant: ${{ vars.CX_TENANT }}
+          base_uri: ${{ vars.CX_BASE_URI }}
+          cx_client_id: ${{ secrets.CX_CLIENT_ID }}
+          cx_client_secret: ${{ secrets.CX_CLIENT_SECRET }}
+          additional_params: --scan-types sast,sca,iac-security --threshold sast-high=0 --threshold sast-medium=0 --threshold sast-low=0 --threshold sca-high=0 --threshold sca-medium=0 --threshold sca-low=0 --threshold iac-security-high=0 --threshold iac-security-medium=0 --threshold iac-security-low=0
+      - name: Scan dependencies, secrets and configuration with Trivy
+        if: ${{ !cancelled() }}
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
